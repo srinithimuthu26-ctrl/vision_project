@@ -7,9 +7,9 @@ import time
 from collections import defaultdict
 
 # Global variables
-detected_corners = {}
-perspective_matrix = None
-detected_objects = {}
+detected_corners = {}  # corner marker positions for coordinate system
+perspective_matrix = None # tranformation matrix from pixels to world coordinates
+detected_objects = {} # aruco markers 
 obstacles = {}
 current_path = []
 morse_decoder = None
@@ -311,40 +311,47 @@ while True:
             marker_center = np.mean(corners[i][0], axis=0)
             center_pixel = tuple(map(int, marker_center))
             
+            # Try to get world coordinates
             world_coords = pixel_to_world_coordinates(center_pixel, marker_id)
             
-            if world_coords is not None:
-                detected_objects[marker_id] = world_coords
-                
-                # Corner markers (0-3)
-                if marker_id in [0, 1, 2, 3]:
+            # Corner markers (0-3) - Always need world coords
+            if marker_id in [0, 1, 2, 3]:
+                if world_coords is not None:
+                    detected_objects[marker_id] = world_coords
                     detected_corners[marker_id] = center_pixel
                     cv2.putText(frame, f"C{marker_id}", 
                                (center_pixel[0]-20, center_pixel[1]-10),
                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            
+            # Robot (ID 4) - ALWAYS detect, coordinates optional
+            elif marker_id == 4:
+                # Always add to detected_objects (use world coords if available, pixel coords as backup)
+                detected_objects[4] = world_coords if world_coords is not None else center_pixel
                 
-                # Robot (ID 4)
-                elif marker_id == 4:
-                    cv2.circle(frame, center_pixel, 15, (0, 0, 255), 2)
-                    cv2.putText(frame, f"ROBOT", 
-                               (center_pixel[0]-30, center_pixel[1]-20),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                cv2.circle(frame, center_pixel, 15, (0, 0, 255), 2)
+                cv2.putText(frame, f"ROBOT", 
+                           (center_pixel[0]-30, center_pixel[1]-20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            
+            # Bomb (ID 5) - ALWAYS detect, coordinates optional
+            elif marker_id == 5:
+                detected_objects[5] = world_coords if world_coords is not None else center_pixel
+                bomb_center = center_pixel
                 
-                # Bomb with LED detection (ID 5)
-                elif marker_id == 5:
-                    bomb_center = center_pixel
-                    cv2.circle(frame, center_pixel, 12, (0, 165, 255), 2)
-                    cv2.putText(frame, f"BOMB", 
-                               (center_pixel[0]-25, center_pixel[1]-20),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
-                    
-                    # Detect red LED on bomb
-                    led_on = led_detector.detect_red_led(frame, center_pixel)
-                    led_detector.update_led_state(led_on, current_time)
+                cv2.circle(frame, center_pixel, 12, (0, 165, 255), 2)
+                cv2.putText(frame, f"BOMB", 
+                           (center_pixel[0]-25, center_pixel[1]-20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 2)
                 
-                # Obstacles (ID 6+)
-                elif marker_id >= 6:
+                # Detect red LED on bomb
+                led_on = led_detector.detect_red_led(frame, center_pixel)
+                led_detector.update_led_state(led_on, current_time)
+            
+            # Obstacles (ID 6+) - Need coordinates for pathfinding
+            elif marker_id >= 6:
+                if world_coords is not None:
                     obstacles[marker_id] = world_coords
+                    detected_objects[marker_id] = world_coords
                     cv2.circle(frame, center_pixel, 8, (255, 0, 255), 2)
     
     # Morse code decoding
